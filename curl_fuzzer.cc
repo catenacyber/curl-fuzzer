@@ -24,8 +24,30 @@
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/resource.h>
 #include <curl/curl.h>
 #include "curl_fuzzer.h"
+
+static int initialized = 0;
+
+static void fuzz_init(void)
+{
+  struct rlimit r;
+  char *envlim;
+
+  /* Ignore SIGPIPE errors. We'll handle the errors ourselves. */
+  signal(SIGPIPE, SIG_IGN);
+
+  r.rlim_cur = 0x2000;
+  r.rlim_max = 0x2000;
+
+  envlim = getenv("FUZZ_STACK_SIZE");
+  if (envlim != NULL) {
+    r.rlim_cur = atoi(envlim);
+    r.rlim_max = atoi(envlim);
+  }
+  FCHECK(setrlimit(RLIMIT_STACK, &r) != 0);
+}
 
 /**
  * Fuzzing entry point. This function is passed a buffer containing a test
@@ -38,8 +60,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   FUZZ_DATA fuzz;
   TLV tlv;
 
-  /* Ignore SIGPIPE errors. We'll handle the errors ourselves. */
-  signal(SIGPIPE, SIG_IGN);
+  if (initialized == 0) {
+    fuzz_init();
+    initialized = 1;
+  }
 
   /* Have to set all fields to zero before getting to the terminate function */
   memset(&fuzz, 0, sizeof(FUZZ_DATA));
